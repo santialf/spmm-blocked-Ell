@@ -130,7 +130,7 @@ __half *createValueIndex(int *rowPtr, int *colIndex, float *values, int *hA_colu
 
             /* Iterate the blocks in the block_id array (x axis) */
             for (int j = 0; j < nb; j++) {
-                int id = nb*i + j;
+                long int id = (long int) nb*i + j;
                 if (hA_columns[id] == -1)
                     break;
 
@@ -279,7 +279,7 @@ int main(int argc, char *argv[]) {
     /************************************************************************************************************/
 
     // Host problem definition
-    int   A_ell_blocksize = 16;
+    int   A_ell_blocksize = 8;
     
     int * rowPtr_pad;
     int remainder = A_num_rows % A_ell_blocksize;
@@ -297,8 +297,12 @@ int main(int argc, char *argv[]) {
     }   
     
     int   A_ell_cols      = findMaxNnz(rowPtr_pad, colIndex, A_num_rows, A_ell_blocksize);
-    long int   A_num_blocks    = A_ell_cols * A_num_rows /
+    double   A_num_blocks    = (double)A_ell_cols * (double)A_num_rows /
                            (A_ell_blocksize * A_ell_blocksize);
+    double   A_max_blocks    = (double)A_num_rows * (double)A_num_cols /
+                           (A_ell_blocksize * A_ell_blocksize);
+
+    double ratioActiveBlocks   = A_num_blocks/A_max_blocks;
     int   B_num_rows      = A_num_cols;
     int   B_num_cols      = 32;
     int   ldb             = B_num_rows;
@@ -385,12 +389,35 @@ int main(int argc, char *argv[]) {
                                  CUSPARSE_SPMM_ALG_DEFAULT, &bufferSize) )
     CHECK_CUDA( cudaMalloc(&dBuffer, bufferSize) )
 
-    // execute SpMM
-    CHECK_CUSPARSE( cusparseSpMM(handle,
-                                 CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                 CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                 &alpha, matA, matB, &beta, matC, CUDA_R_32F,
-                                 CUSPARSE_SPMM_ALG_DEFAULT, dBuffer) )
+    struct timespec t_start, t_end;
+    clock_gettime(CLOCK_MONOTONIC, &t_start);       // initial timestamp
+    double elapsedTime;
+    int numRuns=0;
+
+    while (1) {
+        // execute SpMM
+        CHECK_CUSPARSE( cusparseSpMM(handle,
+                                    CUSPARSE_OPERATION_NON_TRANSPOSE,
+                                    CUSPARSE_OPERATION_NON_TRANSPOSE,
+                                    &alpha, matA, matB, &beta, matC, CUDA_R_32F,
+                                    CUSPARSE_SPMM_ALG_DEFAULT, dBuffer) )
+        cudaDeviceSynchronize();
+        numRuns++;
+
+        clock_gettime(CLOCK_MONOTONIC, &t_end);         // final timestamp
+        elapsedTime = ((t_end.tv_sec + ((double) t_end.tv_nsec / 1000000000)) - (t_start.tv_sec + ((double) t_start.tv_nsec / 1000000000)));
+
+        if(elapsedTime > 5.0f) {        // changed from 1 sec to 5 sec
+            break;
+        }        
+    }
+
+    clock_gettime(CLOCK_MONOTONIC, &t_end); // final timestamp
+    double searchTime = ((t_end.tv_sec + ((double) t_end.tv_nsec / 1000000000)) - (t_start.tv_sec + ((double) t_start.tv_nsec / 1000000000))) / numRuns;
+    double tflops = (2 * ((double)A_num_cols) * ((double)A_num_rows) * ((double)B_num_cols) / 1000000000000) / searchTime;
+
+    printf("Time (seconds):\t%.6f\n", searchTime);
+    printf("TFLOPS:\t%.6f\n", ratioActiveBlocks*tflops);
 
     // destroy matrix/vector descriptors
     CHECK_CUSPARSE( cusparseDestroySpMat(matA) )
@@ -401,11 +428,6 @@ int main(int argc, char *argv[]) {
     // device result check
     CHECK_CUDA( cudaMemcpy(hC, dC, (long int) C_size * sizeof(__half),
                            cudaMemcpyDeviceToHost) )
-                           
-    /*std::ofstream outputFile("output.txt");
-    for (int i = 0; i < C_size; ++i) {
-        outputFile << static_cast<float>(hC[i]) << std::endl;
-    }*/
 
     
     std::printf("spmm_blockedell_example PASSED\n");
