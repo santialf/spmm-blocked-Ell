@@ -35,7 +35,7 @@
 
 const int EXIT_UNSUPPORTED = 2;
 
-__half* createRandomArray(int n) {
+__half* createRandomArray(long int n) {
     __half* array = new __half[n];
 
     for (int i = 0; i < n; i++) { 
@@ -56,7 +56,7 @@ int findMaxNnz(int *rowPtr, int *colIndex, int num_rows, int block_size) {
     for(int i=0; i < num_blocks; i++) {
 
         for (int j = 0; j<block_size; j++) {
-            int id = block_size*i+j;
+            int id = (long int)block_size*i+j;
             
             for(int k=rowPtr[id]; k<rowPtr[id+1]; k++)
                 mySet.insert(colIndex[k]/block_size);
@@ -77,8 +77,8 @@ int *createBlockIndex(int *rowPtr, int *colIndex, int num_rows, int block_size, 
     if (num_rows % block_size != 0)
         mb++;
 
-    int* hA_columns = new int[nb*mb]();
-    int ctr = 0;
+    int* hA_columns = new int[(long int)nb*mb]();
+    long int ctr = 0;
 
     memset(hA_columns, -1, (long int) nb * mb * sizeof(int));
     std::set<int> mySet;
@@ -88,7 +88,7 @@ int *createBlockIndex(int *rowPtr, int *colIndex, int num_rows, int block_size, 
 
         /* Iterates through the rows of each block */
         for (int j = 0; j < block_size; j++) {
-            int id = block_size*i + j;
+            long int id = (long int) block_size*i + j;
             int index = 0;
             if (id >= num_rows)
                 break;
@@ -102,7 +102,7 @@ int *createBlockIndex(int *rowPtr, int *colIndex, int num_rows, int block_size, 
         for (int elem : mySet)
             hA_columns[ctr++] = elem;
         
-        ctr = i*nb+nb;
+        ctr = (long int) i*nb+nb;
         mySet.clear();
     }
     return hA_columns; 
@@ -114,7 +114,7 @@ __half *createValueIndex(int *rowPtr, int *colIndex, float *values, int *hA_colu
     /* Allocate enough memory for the array */
     __half* hA_values = new __half[(long int)num_rows * ell_cols]();
 
-    long int mb = num_rows/block_size, nb = ell_cols/block_size;
+    long int mb = (long int) num_rows/block_size, nb = (long int) ell_cols/block_size;
     if (num_rows % block_size != 0)
         mb++;
 
@@ -135,7 +135,7 @@ __half *createValueIndex(int *rowPtr, int *colIndex, float *values, int *hA_colu
                     break;
 
                 /* Iterate each line of the matrix */
-                for(int k=rowPtr[i*block_size+l]; k<rowPtr[i*block_size+l+1]; k++) {  
+                for(int k=rowPtr[(long int)i*block_size+l]; k<rowPtr[(long int)i*block_size+l+1]; k++) {  
 
                     /* If the element is not in the same block, skip*/
                     if (colIndex[k]/block_size > hA_columns[id])
@@ -279,7 +279,7 @@ int main(int argc, char *argv[]) {
     /************************************************************************************************************/
 
     // Host problem definition
-    int   A_ell_blocksize = 8;
+    int   A_ell_blocksize = 16;
     
     int * rowPtr_pad;
     int remainder = A_num_rows % A_ell_blocksize;
@@ -307,8 +307,8 @@ int main(int argc, char *argv[]) {
     int   B_num_cols      = 32;
     int   ldb             = B_num_rows;
     int   ldc             = A_num_rows;
-    int   B_size          = ldb * B_num_cols;
-    int   C_size          = ldc * B_num_cols;
+    long int   B_size          = (long int) ldb * B_num_cols;
+    long int   C_size          = (long int) ldc * B_num_cols;
 
     /* Memory occupied by blocked ell vectors */
     float mem_ids = (float) A_num_blocks * sizeof(int) / 1000000000;
@@ -415,9 +415,11 @@ int main(int argc, char *argv[]) {
     clock_gettime(CLOCK_MONOTONIC, &t_end); // final timestamp
     double searchTime = ((t_end.tv_sec + ((double) t_end.tv_nsec / 1000000000)) - (t_start.tv_sec + ((double) t_start.tv_nsec / 1000000000))) / numRuns;
     double tflops = (2 * ((double)A_num_cols) * ((double)A_num_rows) * ((double)B_num_cols) / 1000000000000) / searchTime;
-
+   
+    std::cout << argv[1] << std::endl;
     printf("Time (seconds):\t%.6f\n", searchTime);
-    printf("TFLOPS:\t%.6f\n", ratioActiveBlocks*tflops);
+    //printf("TFLOPS:\t%.6f\n", ratioActiveBlocks*tflops);
+    //printf("Ratio Active Blocks:\t%.6f\n", ratioActiveBlocks);
 
     // destroy matrix/vector descriptors
     CHECK_CUSPARSE( cusparseDestroySpMat(matA) )
@@ -430,7 +432,7 @@ int main(int argc, char *argv[]) {
                            cudaMemcpyDeviceToHost) )
 
     
-    std::printf("spmm_blockedell_example PASSED\n");
+    //std::printf("spmm_blockedell_example PASSED\n");
     
     //--------------------------------------------------------------------------
     // device memory deallocation
