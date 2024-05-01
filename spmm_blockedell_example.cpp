@@ -301,7 +301,7 @@ int main(int argc, char *argv[]) {
                            (A_ell_blocksize * A_ell_blocksize);
     double   A_max_blocks    = (double)A_num_rows * (double)A_num_cols /
                            (A_ell_blocksize * A_ell_blocksize);
-
+     
     double ratioActiveBlocks   = A_num_blocks/A_max_blocks;
     int   B_num_rows      = A_num_cols;
     int   B_num_cols      = 32;
@@ -313,10 +313,6 @@ int main(int argc, char *argv[]) {
     /* Memory occupied by blocked ell vectors */
     float mem_ids = (float) A_num_blocks * sizeof(int) / 1000000000;
     float mem_values = (float) A_ell_cols * A_num_rows * sizeof(float) / 1000000000;
-    /*if (mem_ids+mem_values > 30) {
-      printf("Too much memory :(\n");
-      return 1;
-    }*/
 
     int   *hA_columns     = createBlockIndex(rowPtr_pad, colIndex, A_num_rows, A_ell_blocksize, A_ell_cols);
     __half *hA_values     = createValueIndex(rowPtr_pad, colIndex, values, hA_columns, A_num_rows, A_ell_blocksize, A_ell_cols);
@@ -389,6 +385,13 @@ int main(int argc, char *argv[]) {
                                  CUSPARSE_SPMM_ALG_DEFAULT, &bufferSize) )
     CHECK_CUDA( cudaMalloc(&dBuffer, bufferSize) )
 
+    CHECK_CUSPARSE( cusparseSpMM(handle,
+			    	CUSPARSE_OPERATION_NON_TRANSPOSE,
+				CUSPARSE_OPERATION_NON_TRANSPOSE,
+				&alpha, matA, matB, &beta, matC, CUDA_R_32F,
+				CUSPARSE_SPMM_ALG_DEFAULT, dBuffer) )
+    cudaDeviceSynchronize();
+
     struct timespec t_start, t_end;
     clock_gettime(CLOCK_MONOTONIC, &t_start);       // initial timestamp
     double elapsedTime;
@@ -405,6 +408,7 @@ int main(int argc, char *argv[]) {
         numRuns++;
 
         clock_gettime(CLOCK_MONOTONIC, &t_end);         // final timestamp
+
         elapsedTime = ((t_end.tv_sec + ((double) t_end.tv_nsec / 1000000000)) - (t_start.tv_sec + ((double) t_start.tv_nsec / 1000000000)));
 
         if(elapsedTime > 5.0f) {        // changed from 1 sec to 5 sec
@@ -416,8 +420,8 @@ int main(int argc, char *argv[]) {
     double searchTime = ((t_end.tv_sec + ((double) t_end.tv_nsec / 1000000000)) - (t_start.tv_sec + ((double) t_start.tv_nsec / 1000000000))) / numRuns;
     double tflops = (2 * ((double)A_num_cols) * ((double)A_num_rows) * ((double)B_num_cols) / 1000000000000) / searchTime;
    
-    std::cout << argv[1] << std::endl;
-    printf("Time (seconds):\t%.6f\n", searchTime);
+    std::cout << argv[1];
+    printf(" Time (seconds):\t%.6f\n", searchTime);
     //printf("TFLOPS:\t%.6f\n", ratioActiveBlocks*tflops);
     //printf("Ratio Active Blocks:\t%.6f\n", ratioActiveBlocks);
 
@@ -431,8 +435,6 @@ int main(int argc, char *argv[]) {
     CHECK_CUDA( cudaMemcpy(hC, dC, (long int) C_size * sizeof(__half),
                            cudaMemcpyDeviceToHost) )
 
-    
-    //std::printf("spmm_blockedell_example PASSED\n");
     
     //--------------------------------------------------------------------------
     // device memory deallocation
